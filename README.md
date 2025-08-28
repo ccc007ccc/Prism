@@ -37,7 +37,7 @@ docker run -d -p 5000:5000 \
 1.  **环境准备**: 确保已安装 Python 3.8+。
 2.  **克隆并安装依赖**:
     ```bash
-    git clone [https://github.com/ccc007ccc/prism.git](https://github.com/ccc007ccc/prism.git)
+    git clone https://github.com/ccc007ccc/prism.git
     cd prism
     python -m venv .venv
     source .venv/bin/activate  # on Windows use: .venv\Scripts\activate
