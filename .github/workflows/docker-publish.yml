@@ -1,0 +1,43 @@
+# .github/workflows/docker-publish.yml
+
+name: Docker Image CI for Prism
+
+# 触发工作流的事件
+on:
+  # 当有代码推送到 main 分支时触发
+  push:
+    branches: [ "main" ]
+  # 允许你手动在 GitHub Actions 页面触发此工作流
+  workflow_dispatch:
+
+jobs:
+  build_and_push:
+    # 运行此任务的虚拟机环境
+    runs-on: ubuntu-latest
+
+    steps:
+      # 步骤 1: 检出你的代码
+      # Actions/checkout 是一个官方的 action，用于将你的仓库代码下载到虚拟机中
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 步骤 2: 登录到 GitHub Container Registry (GHCR)
+      # docker/login-action 是一个官方推荐的 action，用于登录 Docker 仓库
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          # github.repository_owner 会自动获取你的 GitHub 用户名或组织名
+          username: ${{ github.repository_owner }}
+          # DOCKER_PAT 是我们需要在仓库设置中创建的加密密钥
+          password: ${{ secrets.DOCKER_PAT }}
+
+      # 步骤 3: 构建并推送 Docker 镜像
+      # docker/build-push-action 是一个强大的 action，可以完成构建、标记和推送所有操作
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 自动为镜像打上标签，例如：ghcr.io/your-username/prism:latest
+          tags: ghcr.io/${{ github.repository_owner }}/prism:latest
