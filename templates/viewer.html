@@ -14,6 +14,12 @@
             position: relative;
             transition: transform 0.2s ease-in-out;
             box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            /* --- 新增的样式规则 --- */
+            max-height: 80vh;
+            /* -------------------- */
+            display: flex; /* 使用flex布局确保内部元素居中 */
+            align-items: center;
+            justify-content: center;
         }
         .camera-container:hover { transform: scale(1.02); }
         .camera-container video { 
@@ -21,6 +27,7 @@
             height: 100%; 
             object-fit: contain; 
             display: block; 
+            max-height: 100%; /* 确保视频不会超出容器 */
         }
         .camera-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 0.3s; background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 50%); pointer-events: none; }
         .camera-container:hover .camera-overlay { opacity: 1; }
