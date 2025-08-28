@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>摄像头端</title>
+     <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin-top: 20px; background-color: #333; color: white;}
+        video { border: 2px solid #555; border-radius: 8px; background-color: black; max-width: 90%; }
+        #status { margin-top: 15px; font-size: 1.2em; }
+        #viewers-container { margin-top: 20px; width: 80%; max-width: 640px; }
+        #viewers-list { list-style-type: none; padding: 0; }
+        #viewers-list li { background: #444; padding: 8px; border-radius: 4px; margin-bottom: 5px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>摄像头端</h1>
+    <video id="localVideo" autoplay muted playsinline></video>
+    <p id="status">正在连接服务器...</p>
+    
+    <div id="viewers-container">
+        <h3>当前查看者:</h3>
+        <ul id="viewers-list"></ul>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const localVideo = document.getElementById('localVideo');
+        const status = document.getElementById('status');
+        const viewersList = document.getElementById('viewers-list');
+        const socket = io();
+
+        let localStream;
+        const peerConnections = {}; 
+        
+        const RESOLUTIONS = {
+            '480p': { width: { ideal: 640 }, height: { ideal: 480 } },
+            '720p': { width: { ideal: 1280 }, height: { ideal: 720 } },
+            '1080p': { width: { ideal: 1920 }, height: { ideal: 1080 } },
+            '4k': { width: { ideal: 3840 }, height: { ideal: 2160 } },
+        };
+        const iceConfig = { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] };
+        let currentResolution = '720p';
+
+        const startCamera = async (resolutionKey = '720p') => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            currentResolution = resolutionKey;
+            const constraints = { video: RESOLUTIONS[resolutionKey], audio: false };
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                localVideo.srcObject = localStream;
+                return localStream.getVideoTracks()[0];
+            } catch (e) {
+                console.error("无法启动摄像头:", e);
+                status.textContent = `启动摄像头失败: ${e.name}`;
+                return null;
+            }
+        };
+
+        socket.on('connect', async () => {
+            status.textContent = '已连接，正在启动摄像头...';
+            await startCamera();
+            socket.emit('register_camera');
+            status.textContent = '摄像头已就绪，等待查看者...';
+        });
+
+        socket.on('offer', async (data) => {
+            const viewerSid = data.from;
+            const pc = new RTCPeerConnection(iceConfig);
+            peerConnections[viewerSid] = { pc: pc, videoSender: null };
+
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                peerConnections[viewerSid].videoSender = pc.addTrack(videoTrack, localStream);
+            }
+            
+            pc.onicecandidate = e => e.candidate && socket.emit('ice_candidate', { target: viewerSid, candidate: e.candidate });
+            
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('answer', { target: viewerSid, sdp: pc.localDescription });
+
+            const viewerItem = document.createElement('li');
+            viewerItem.id = `viewer-${viewerSid}`;
+            viewerItem.textContent = viewerSid;
+            viewersList.appendChild(viewerItem);
+        });
+        
+        socket.on('apply_quality_change', async ({ from: viewerSid, settings }) => {
+            status.textContent = `收到来自 ${viewerSid.substring(0,5)} 的画质调整请求...`;
+            console.log("收到画质变更请求:", settings);
+
+            if (settings.resolution && settings.resolution !== currentResolution) {
+                status.textContent = `正在调整分辨率至 ${settings.resolution}...`;
+                const newVideoTrack = await startCamera(settings.resolution);
+                if (newVideoTrack) {
+                    for (const sid in peerConnections) {
+                        const sender = peerConnections[sid].videoSender;
+                        if (sender) {
+                            await sender.replaceTrack(newVideoTrack);
+                        }
+                    }
+                }
+            }
+
+            const bitrateInBps = settings.bitrate * 1000;
+            const connection = peerConnections[viewerSid];
+            if (connection && connection.videoSender) {
+                status.textContent = `正在调整 ${viewerSid.substring(0,5)} 的码率至 ${settings.bitrate}kbps...`;
+                const sender = connection.videoSender;
+                const params = sender.getParameters();
+                if (!params.encodings) params.encodings = [{}];
+                params.encodings[0].maxBitrate = bitrateInBps;
+                await sender.setParameters(params);
+            }
+            status.textContent = '画质调整应用完毕。';
+        });
+        
+        socket.on('ice_candidate', async data => {
+            const pc = peerConnections[data.from]?.pc;
+            if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        });
+
+        socket.on('viewer_left', data => {
+            const viewerSid = data.sid;
+            if (peerConnections[viewerSid]) {
+                peerConnections[viewerSid].pc.close();
+                delete peerConnections[viewerSid];
+            }
+            const viewerItem = document.getElementById(`viewer-${viewerSid}`);
+            if (viewerItem) {
+                viewerItem.remove();
+            }
+        });
+    });
+    </script>
+</body>
+</html>
